@@ -33,11 +33,14 @@ const miner = Effect.gen(function* (_) {
 		balance: 0,
 	}
 
-	const result = yield* login(tgWebAppData)
-	state.reward = result.app_data.reward
-	state.balance = result.user_data.balance
+	const sync = Effect.gen(function* (_) {
+		const result = yield* login(tgWebAppData)
+		state.reward = result.app_data.reward
+		state.balance = result.user_data.balance
+	})
 
 	const mine = Effect.gen(function* (_) {
+		yield* Effect.sleep('1 seconds')
 		const result = yield* collect(tgWebAppData)
 
 		const balanceDiff = result.user_data.balance - state.balance
@@ -53,11 +56,20 @@ const miner = Effect.gen(function* (_) {
 	})
 
 	const mineInterval = yield* Config.duration('GAME_MINE_INTERVAL').pipe(Config.withDefault('6 minutes'))
+	const syncInterval = yield* Config.duration('GAME_SYNC_INTERVAL').pipe(Config.withDefault('1 hour'))
 
-	yield* Effect.repeat(
+	const miner = Effect.repeat(
 		mine,
 		Schedule.addDelay(Schedule.forever, () => mineInterval)
 	)
+
+	const syncer = Effect.repeat(
+		sync,
+		Schedule.addDelay(Schedule.forever, () => syncInterval)
+	)
+
+	yield* sync
+	yield* Effect.all([miner, syncer], { concurrency: 'unbounded' })
 })
 
 const policy = Schedule.addDelay(Schedule.forever, () => '30 minutes')
